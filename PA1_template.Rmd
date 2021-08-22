@@ -4,19 +4,53 @@ output:
   html_document:
     keep_md: true
 ---
-
+```{r setoptions, echo=FALSE}
+library(knitr)
+opts_chunk$set(message=FALSE, warning=FALSE)
+```
 
 ## Loading and preprocessing the data
-
-
+```{r loading}
+unzip ("activity.zip", exdir="./data")
+df <- read.csv("./data/activity.csv")
+unlink("./data", recursive=TRUE)
+```
+Now the data is loaded into variable df, let's preprocess the data
+```{r preprocessing}
+# Change date into date type
+library(lubridate)
+df$date <- ymd(df$date)
+```
 
 ## What is mean total number of steps taken per day?
+```{r mean_steps_per_day}
+library(dplyr)
+# Ignore missing values
+df_clean <- df 
+steps_per_day <- df %>% 
+    filter(!is.na(steps)) %>%
+    group_by(date) %>%
+    summarise(sum=sum(steps))
+```
+
+The total number of steps taken per day is visualized through this historgram.
+```{r visual}
+library("ggplot2")
+p <- ggplot(data=steps_per_day, aes(x=date, y=sum)) + geom_bar(stat="identity")
+p + labs(x = "Date", y = "Total Steps", title=" Total Number of Steps Taken Per Day")
+```
+
+
+Report the mean and median total number of steps taken per day.
+```{r report}
+library(xtable)
+xt <- xtable(data.frame(summary(data.frame(steps_per_day$sum))[3:4]))
+print(xt, type="html")
+```
 
 
 
 ## What is the average daily activity pattern?
-
-
 
 ## Imputing missing values
 
