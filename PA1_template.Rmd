@@ -4,7 +4,7 @@ output:
   html_document:
     keep_md: true
 ---
-```{r setoptions, echo=FALSE}
+```{r setoptions, echo=FALSE, message=FALSE, warning=FALSE}
 library(knitr)
 opts_chunk$set(message=FALSE, warning=FALSE)
 ```
@@ -26,7 +26,6 @@ df$date <- ymd(df$date)
 ```{r mean_steps_per_day}
 library(dplyr)
 # Ignore missing values
-df_clean <- df 
 steps_per_day <- df %>% 
     filter(!is.na(steps)) %>%
     group_by(date) %>%
@@ -35,25 +34,136 @@ steps_per_day <- df %>%
 
 The total number of steps taken per day is visualized through this historgram.
 ```{r visual}
-library("ggplot2")
-p <- ggplot(data=steps_per_day, aes(x=date, y=sum)) + geom_bar(stat="identity")
-p + labs(x = "Date", y = "Total Steps", title=" Total Number of Steps Taken Per Day")
+barplot(sum ~ date, data=steps_per_day, xlab="Date", ylab="Total Steps", main="Total Number of Steps Taken Per Day")
 ```
 
 
 Report the mean and median total number of steps taken per day.
-```{r report}
+```{r report, results="asis"}
+report_o <- steps_per_day %>%
+        summarise(mean=mean(sum), median=median(sum))
 library(xtable)
-xt <- xtable(data.frame(summary(data.frame(steps_per_day$sum))[3:4]))
-print(xt, type="html")
+xt <- xtable(report_o)
+print(xt, type="html", include.rownames = FALSE)
+```
+## What is the average daily activity pattern?
+
+Make a time series plot (i.e. \color{red}{\verb|type = "l"|}type = "l") of the 5-minute interval (x-axis) and the average number of steps taken, averaged across all days (y-axis)
+```{r average_daily}
+average_daily <- df %>%
+    filter(!is.na(steps)) %>%
+    group_by(interval) %>%
+    summarize(average = mean(steps))
+plot(x=average_daily$interval, y=average_daily$average, type="l", xlab="5 min interval", ylab="average steps", main="Average Daily Activity Pattern")
 ```
 
-
-
-## What is the average daily activity pattern?
+Which 5-minute interval, on average across all the days in the dataset, contains the maximum number of steps?
+```{r max_steps,results="asis"}
+xt <- xtable(average_daily[which.max(average_daily$average),])
+print(xt, type="html", include.rownames = FALSE)
+```
 
 ## Imputing missing values
 
+Note that there are a number of days/intervals where there are missing values (coded as \color{red}{\verb|NA|}NA). The presence of missing days may introduce bias into some calculations or summaries of the data.
+
+
+Calculate and report the total number of missing values in the dataset (i.e. the total number of rows with \color{red}{\verb|NA|}NAs)
+```{r total_na}
+na_values <- df %>% filter(is.na(steps))
+print(nrow(na_values))
+```
+
+
+Devise a strategy for filling in all of the missing values in the dataset. The strategy does not need to be sophisticated. For example, you could use the mean/median for that day, or the mean for that 5-minute interval, etc.
+
+
+Let's take a look at the distribution of these NAs.  Starting with days.
+```{r na_count, fig.height = 3, fig.width = 10, fig.align = "center"}
+na_count_day <- na_values %>% group_by(date) %>% summarise(n=n())
+plot(na_count_day$date, na_count_day$n, xlab="date", ylab="NA count")
+```
+
+
+There are a handful of missing value dates and the missing counts look fairly consistent. Let's look at interval:
+```{r na_count_distribution, fig.height = 3, fig.width = 10, fig.align = "center"}
+na_count_time <- na_values %>% group_by(interval) %>% summarise(n=n())
+plot(na_count_time$interval, na_count_time$n, xlab="interval", ylab="NA count", type="l")
+```
+
+
+Based on these graphs, we can conclude that there are 8 days missing values. Let's take a look a distribution of steps:
+
+```{r steps_dist}
+steps_value <-df %>%filter(!is.na(steps))
+summary(steps_value$steps)
+```
+```{r mean_vs_median}
+average_daily <- df %>%
+    filter(!is.na(steps)) %>%
+    group_by(interval) %>%
+    summarize(average = mean(steps), median = median(steps))
+plot(x=average_daily$interval, y=average_daily$average, type="l", col="red",
+     xlab="5 min interval", ylab="steps", main="Daily Activity Pattern, Mean Vs Median")
+lines(x=average_daily$interval, y=average_daily$median, col="blue")
+legend("topright", legend=c("Average", "Median"),
+       col=c("red", "blue"), lty = 1:2, cex=0.8)
+```
+
+The distribution of steps is highly skewed. Thus, we will be using median of each interval to impute the missing data. 
+
+
+Create a new dataset that is equal to the original dataset but with the missing data filled in.
+```{r impute}
+impute <- df %>% 
+    group_by(interval) %>% 
+    mutate(steps=ifelse(is.na(steps), median(steps, na.rm=TRUE), steps))
+```
+
+Make a histogram of the total number of steps taken each day and Calculate and report the mean and median total number of steps taken per day. 
+
+```{r hist_impute, results="asis"}
+i_sum <- impute %>%
+    group_by(date) %>%
+    summarize(sum=sum(steps))
+barplot(sum ~ date, data=i_sum, xlab="Date", ylab="Total Steps", main="Total Number of Steps Taken Per Day")
+
+# Calculate mean and median
+report_i <- i_sum %>%
+        summarise(mean=mean(sum), median=median(sum))
+xt <- xtable(report_i)
+print(xt, type="html", include.rownames = FALSE)
+```
+
+Do these values differ from the estimates from the first part of the assignment? What is the impact of imputing missing data on the estimates of the total daily number of steps?
+
+
+Comparing 2 graphs, the general shape of distribution is similar, with 8 missing days imputed with relatively small values. Overall there's an decrease in summary statistics of daily step counts.
+```{r compare, results="asis"}
+# Calculate percentage change in mean and median of daily step counts
+mean_diff = (report_i["mean"]- report_o["mean"])/report_o["mean"]
+median_dff = (report_i["median"]- report_o["median"])/report_o["median"]
+diff = cbind(mean_diff, median_dff)
+formatted_table <- as.data.frame(matrix(
+   sprintf("%.0f%%", diff*100),
+   nrow(diff),
+   dimnames = dimnames(diff)
+))
+xt <- xtable(formatted_table, label="Percentage in Change")
+print(xt, type="html", include.rownames = FALSE)
+```
 
 
 ## Are there differences in activity patterns between weekdays and weekends?
+```{r week_agg}
+week <- df %>% 
+    filter(!is.na(steps)) %>%
+    mutate(day = ifelse(wday(date) <= 5, "Weekdays", "Weekends"))
+week <- week %>%
+    group_by(day) %>%
+    summarise(average=mean(steps))
+barplot(average ~ day, data=week, xlab="", ylab="Total Steps", main="Average Number of Steps Taken Weekdays vs Weekends")
+```
+
+
+On everage, there are more activity on weekends compare to weekdays. 
